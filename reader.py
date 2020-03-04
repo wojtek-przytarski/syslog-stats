@@ -1,37 +1,37 @@
 import time
 import re
 import logging
-from multiprocessing import Queue, Pool
+from multiprocessing import Queue, Pool, cpu_count
 
 
 RFC3164_PATTERN = re.compile(r'<(\d{1,3})>(.{15})\s(\S*)\s(.*)')
 RFC3164_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
-def read_file(filename, chunk_size=5000):
+def read_file(filename, chunk_size=1000000):
     pool = Pool()
+    cores = cpu_count()
+    for i in range(cores - 1):
+        pool.apply_async(handle_chunk)
+
     with open(filename) as file:
-        count = 0
-        chunk = []
-        for line in file:
-            chunk.append(line)
-            count += 1
-            if count % chunk_size == 0:
-                pool.apply_async(handle_chunk, args=(chunk,))
-                chunk = []
-        pool.apply_async(handle_chunk, args=(chunk,))
-        print(count)
+        while chunk := file.readlines(chunk_size):
+            chunks_queue.put(chunk)
+    print('Sending STOP messages')
+
+    for i in range(cores - 1):
+        chunks_queue.put('STOP')
     pool.close()
     pool.join()
 
 
-def handle_chunk(chunk):
+def handle_chunk():
     severe_messages = 0
-    for line in chunk:
-        line_stats = handle_line(line)
-        if line_stats.get('severity') <= 1:
-            severe_messages += 1
-    print(severe_messages)
+    while (chunk := chunks_queue.get()) != 'STOP':
+        for line in chunk:
+            line_stats = handle_line(line)
+            if line_stats.get('severity') <= 1:
+                severe_messages += 1
     severity_queue.put(severe_messages)
 
 
@@ -81,9 +81,10 @@ def parse_line(line):
 if __name__ == '__main__':
     start = time.perf_counter()
     severity_queue = Queue()
+    chunks_queue = Queue()
     print('Starting...')
-    read_file('syslog1GB')
-
+    read_file('syslogLarge')
+    print('Counting severe messages...')
     severity_messages = 0
     while not severity_queue.empty():
         severity_messages += severity_queue.get()

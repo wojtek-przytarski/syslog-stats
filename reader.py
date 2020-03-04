@@ -1,46 +1,48 @@
 import time
 import re
 import logging
+from collections import defaultdict
 from multiprocessing import Queue, Pool, cpu_count
 
 
 RFC3164_PATTERN = re.compile(r'<(\d{1,3})>(.{15})\s(\S*)\s(.*)')
 RFC3164_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+CHUNKING_PROCESSES = cpu_count() - 2
+
 
 def read_file(filename, chunk_size=1000000):
     pool = Pool()
-    cores = cpu_count()
-    for i in range(cores - 1):
+    for i in range(CHUNKING_PROCESSES):
         pool.apply_async(handle_chunk)
+    pool.apply_async(count_statistics)
 
     with open(filename) as file:
         while chunk := file.readlines(chunk_size):
             chunks_queue.put(chunk)
     print('Sending STOP messages')
 
-    for i in range(cores - 1):
-        chunks_queue.put('STOP')
+    for i in range(CHUNKING_PROCESSES):
+        chunks_queue.put('STOP_CHUNKS')
     pool.close()
     pool.join()
 
 
 def handle_chunk():
-    severe_messages = 0
-    while (chunk := chunks_queue.get()) != 'STOP':
+    while (chunk := chunks_queue.get()) != 'STOP_CHUNKS':
         for line in chunk:
             line_stats = handle_line(line)
-            if line_stats.get('severity') <= 1:
-                severe_messages += 1
-    severity_queue.put(severe_messages)
+            severity_queue.put(line_stats)
+    severity_queue.put('STOP_STATS')
 
 
 def handle_line(line):
     log_data = parse_line(line)
     stats = {
         'length': len(log_data.get('msg')),
+        'hostname': log_data.get('hostname'),
         'timestamp': len(log_data.get('timestamp')),
-        'severity': get_severity(log_data.get('pri')),
+        'severe': get_severity(log_data.get('pri')) <= 1,
     }
     return stats
 
@@ -78,17 +80,46 @@ def parse_line(line):
     }
 
 
+def count_statistics():
+    total = {
+        'severe': 0,
+        'msg_length': 0,
+        'oldest': 'Jan  1 00:00:00',
+        'latest': 'Dec 31 23:59:59',
+    }
+    severe_by_host = defaultdict(int)
+    msg_length_by_host = defaultdict(int)
+    oldest_by_host = defaultdict(lambda: 'Jan  1 00:00:00')
+    latest_by_host = defaultdict(lambda: 'Dec 31 23:59:59')
+    chunks_finished = 0
+    while line_stats := severity_queue.get(timeout=1000):
+        if line_stats == 'STOP_STATS':
+            chunks_finished += 1
+            print(f'Got STOP_STATS signal, stopped chunking processes: {chunks_finished}')
+
+        hostname = line_stats['hostname']
+        msg_length = line_stats['length']
+
+        total['msg_length'] += msg_length
+        msg_length_by_host[hostname] += msg_length
+        if line_stats['severe']:
+            total['severe'] += 1
+            severe_by_host[hostname] += 1
+    with open('stats.txt', 'w') as f:
+        f.writelines([
+            f'Finished with stats {total}',
+            f'Finished with stats by host {msg_length_by_host}',
+            f'Finished with stats by host {severe_by_host}'
+        ])
+
+
 if __name__ == '__main__':
     start = time.perf_counter()
     severity_queue = Queue()
     chunks_queue = Queue()
     print('Starting...')
-    read_file('syslogLarge')
-    print('Counting severe messages...')
-    severity_messages = 0
-    while not severity_queue.empty():
-        severity_messages += severity_queue.get()
+    read_file('syslogSmall', 2)
 
     finish = time.perf_counter()
 
-    print(f'Done {severity_messages} in {finish - start}')
+    print(f'Done in {finish - start}')

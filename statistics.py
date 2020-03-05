@@ -10,8 +10,8 @@ class Statistics:
         self.lines = 0
         self.messages_length = 0
         self.severe_messages = 0
-        self.oldest_timestamp = datetime.datetime(2019, 1, 1)
-        self.latest_timestamp = datetime.datetime(2019, 12, 31, 23, 59, 59)
+        self.oldest_timestamp = datetime.datetime(2019, 12, 31, 23, 59, 59)
+        self.latest_timestamp = datetime.datetime(2019, 1, 1)
 
     def add_data(self, stats):
         self.lines += stats['lines']
@@ -34,8 +34,8 @@ class Statistics:
             title,
             self.severe_messages,
             self.average_message_length,
-            self.oldest_timestamp,
-            self.latest_timestamp,
+            self._datetime_to_bsd_timestamp(self.oldest_timestamp),
+            self._datetime_to_bsd_timestamp(self.latest_timestamp),
         ]
 
     def to_dict(self):

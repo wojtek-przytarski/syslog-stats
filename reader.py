@@ -1,93 +1,82 @@
+import os
+import sys
 import time
-import re
 import logging
-from multiprocessing import Queue, Pool
+from multiprocessing import Queue, Pool, cpu_count
+
+from chunk_handler import ChunkHandler
+from statistics import StatisticsManager
 
 
-RFC3164_PATTERN = re.compile(r'<(\d{1,3})>(.{15})\s(\S*)\s(.*)')
-RFC3164_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+CHUNKING_PROCESSES = max(1, cpu_count() - 1)
+logger = logging.getLogger('reader')
+fh = logging.FileHandler('reader.log')
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+logger.setLevel(logging.DEBUG)
+
+stats_queue = Queue()
+chunks_queue = Queue()
 
 
-def read_file(filename, chunk_size=5000):
+def read_file(filename, chunk_size=1000000):
     pool = Pool()
+    for i in range(CHUNKING_PROCESSES):
+        pool.apply_async(handle_chunk)
+    pool.apply_async(prepare_statistics)
+
     with open(filename) as file:
-        count = 0
-        chunk = []
-        for line in file:
-            chunk.append(line)
-            count += 1
-            if count % chunk_size == 0:
-                pool.apply_async(handle_chunk, args=(chunk,))
-                chunk = []
-        pool.apply_async(handle_chunk, args=(chunk,))
-        print(count)
+        while chunk := file.readlines(chunk_size):
+            chunks_queue.put(chunk)
+    logger.info('Sending STOP messages')
+    for i in range(CHUNKING_PROCESSES):
+        chunks_queue.put('STOP_CHUNKS')
     pool.close()
     pool.join()
 
 
-def handle_chunk(chunk):
-    severe_messages = 0
-    for line in chunk:
-        line_stats = handle_line(line)
-        if line_stats.get('severity') <= 1:
-            severe_messages += 1
-    print(severe_messages)
-    severity_queue.put(severe_messages)
+def handle_chunk():
+    handler = ChunkHandler()
+    logger.info(f'Started chunk process {handler=}')
+    stats_queue.put('START_CHUNK_PROC')
+    while (chunk := chunks_queue.get()) != 'STOP_CHUNKS':
+        stats = handler.get_chunk_stats(chunk)
+        stats_queue.put(stats)
+    stats_queue.put('END_CHUNK_PROC')
+    logger.info('Stopped chunk process')
 
 
-def handle_line(line):
-    log_data = parse_line(line)
-    stats = {
-        'length': len(log_data.get('msg')),
-        'timestamp': len(log_data.get('timestamp')),
-        'severity': get_severity(log_data.get('pri')),
-    }
-    return stats
-
-
-def get_severity(pri):
-    """
-    From  https://www.ietf.org/rfc/rfc3164.txt
-
-        Numerical         Severity
-          Code
-           0       Emergency: system is unusable
-           1       Alert: action must be taken immediately
-           2       Critical: critical conditions
-           3       Error: error conditions
-           4       Warning: warning conditions
-           5       Notice: normal but significant condition
-           6       Informational: informational messages
-           7       Debug: debug-level messages
-    :param pri:
-    :return: severity_code
-    """
-    return pri % 8
-
-
-def parse_line(line):
-    match = RFC3164_PATTERN.match(line)
-    if not match:
-        logging.error(f'No match for syslog line: {line}')
-        return {}
-    return {
-        'pri': int(match.group(1)),
-        'timestamp': match.group(2),
-        'hostname': match.group(3),
-        'msg': match.group(4),
-    }
+def prepare_statistics():
+    stats = StatisticsManager()
+    logger.info('Started statistics process')
+    x = 1
+    stats_queue.get()
+    while x:
+        partial_stats = stats_queue.get()
+        if partial_stats == 'START_CHUNK_PROC':
+            x += 1
+        elif partial_stats == 'END_CHUNK_PROC':
+            x -= 1
+        else:
+            stats.add_total_data(partial_stats['total'])
+            for host, host_dict in partial_stats['by_host'].items():
+                stats.add_data(host, host_dict)
+    stats.write_to_file('stats.csv')
+    logger.info(f'Statistics saved: {stats.to_dict()}')
+    print(f'Statistics saved to file stats.csv')
 
 
 if __name__ == '__main__':
     start = time.perf_counter()
-    severity_queue = Queue()
-    print('Starting...')
-    read_file('syslog1GB')
 
-    severity_messages = 0
-    while not severity_queue.empty():
-        severity_messages += severity_queue.get()
+    file_name = sys.argv[1]
+    file_size = os.path.getsize(file_name)
+    cs = 1048576
+
+    logger.info(f'Starting process {file_name=}, {file_size=}, {cs=}')
+    read_file(file_name, cs)
 
     finish = time.perf_counter()
-
-    print(f'Done {severity_messages} in {finish - start}')
+    logger.info(f'Done in {finish - start} sec')
+    print(f'Done in {finish - start}')

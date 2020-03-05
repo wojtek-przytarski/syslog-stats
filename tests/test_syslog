@@ -1,0 +1,10 @@
+<47>Dec 1 15:38:21 mymachine myproc% fatal error, terminating!
+<32>May 3 05:06:34 10.1.2.3 su: 'su root' failed for sprinkles on /dev/pts/8
+<13>Oct  7 10:09:00 unicorn sched# invalid operation
+<166>Aug  3 12:01:11 FEDC:BA98:7654:3210:FEDC:BA98:7654:3210 BIOS-abcd: [mem 0x0000000000000000-0x000000000005700f] usable
+<34>Feb 11 05:06:34 10.1.2.3 smpboot: Total of 1000 processors activated (31012.00 EXMPL)
+<165>Aug  2 22:14:15 FEDC:BA98:7654:3210:FEDC:BA98:7654:3210 awesomeapp starting up version 3.0.1...
+<48>Sep 22 15:38:21 mymachine another test line of msg length
+<72>Oct 25 23:06:34 10.1.2.3 Console: switching to colour frame buffer device 240x67
+<33>Oct 25 23:07:11 10.1.2.3 usb 1-1: New USB device found, idVendor=1ea7, idProduct=0064, bcdDevice= 2.00
+<161>Aug  3 12:01:10 FEDC:BA98:7654:3210:FEDC:BA98:7654:3210 usb 1-1: New USB device found, idVendor=1ea7, idProduct=0064, bcdDevice= 2.00

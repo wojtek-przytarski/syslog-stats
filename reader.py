@@ -67,16 +67,18 @@ def prepare_statistics():
     print(f'Statistics saved to file stats.csv')
 
 
-if __name__ == '__main__':
-    start = time.perf_counter()
-
-    file_name = sys.argv[1]
-    file_size = os.path.getsize(file_name)
+def run(filepath):
+    file_size = os.path.getsize(filepath)
     cs = 1048576
+    logger.info(f'Starting process {filepath=}, {file_size=}, {cs=}')
 
-    logger.info(f'Starting process {file_name=}, {file_size=}, {cs=}')
-    read_file(file_name, cs)
-
+    start = time.perf_counter()
+    read_file(filepath, cs)
     finish = time.perf_counter()
     logger.info(f'Done in {finish - start} sec')
     print(f'Done in {finish - start}')
+
+
+if __name__ == '__main__':
+    file_name = sys.argv[1]
+    run(file_name)

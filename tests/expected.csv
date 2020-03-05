@@ -1,0 +1,7 @@
+Host,ALERT/EMERGENCY messages,AVG message length,Oldest,Newest
+Total,5,50.5,Feb 11 05:06:34,Dec 01 15:38:21
+
+mymachine,1,32.0,Sep 22 15:38:21,Dec 01 15:38:21
+10.1.2.3,3,60.0,Feb 11 05:06:34,Oct 25 23:07:11
+unicorn,0,24.0,Oct 07 10:09:00,Oct 07 10:09:00
+FEDC:BA98:7654:3210:FEDC:BA98:7654:3210,1,59.0,Aug 02 22:14:15,Aug 03 12:01:11

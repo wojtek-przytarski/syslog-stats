@@ -10,16 +10,16 @@ class Statistics:
         self.lines = 0
         self.messages_length = 0
         self.severe_messages = 0
-        self.oldest_timestamp = self._bsd_timestamp_to_datetime('Dec 31 23:59:59')
-        self.latest_timestamp = self._bsd_timestamp_to_datetime('Jan  1 00:00:00')
+        self.oldest_timestamp = datetime.datetime(2019, 1, 1)
+        self.latest_timestamp = datetime.datetime(2019, 12, 31, 23, 59, 59)
 
-    def add_data(self, stats, line=True):
-        self.lines += 1 if line else stats['lines']
+    def add_data(self, stats):
+        self.lines += stats['lines']
         self.messages_length += stats['messages_length']
         self.severe_messages += stats['severe_messages']
 
-        oldest = self._bsd_timestamp_to_datetime(stats['oldest_timestamp'])
-        latest = oldest if line else self._bsd_timestamp_to_datetime(stats['latest_timestamp'])
+        oldest = stats['oldest_timestamp']
+        latest = stats['latest_timestamp']
         if oldest < self.oldest_timestamp:
             self.oldest_timestamp = oldest
         if latest > self.latest_timestamp:
@@ -43,8 +43,8 @@ class Statistics:
             'lines': self.lines,
             'messages_length': self.messages_length,
             'severe_messages': self.severe_messages,
-            'oldest_timestamp': self._datetime_to_bsd_timestamp(self.oldest_timestamp),
-            'latest_timestamp': self._datetime_to_bsd_timestamp(self.latest_timestamp),
+            'oldest_timestamp': self.oldest_timestamp,
+            'latest_timestamp': self.latest_timestamp,
         }
 
     def _bsd_timestamp_to_datetime(self, timestamp):

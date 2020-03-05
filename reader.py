@@ -1,16 +1,23 @@
 import os
+import sys
 import time
-import re
 import logging
-from collections import defaultdict
 from multiprocessing import Queue, Pool, cpu_count
 
+from chunk_handler import ChunkHandler
 from statistics import StatisticsManager
 
-RFC3164_PATTERN = re.compile(r'<(\d{1,3})>(.{15})\s(\S*)\s(.*)')
-RFC3164_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 CHUNKING_PROCESSES = max(1, cpu_count() - 1)
+logger = logging.getLogger('reader')
+fh = logging.FileHandler('reader.log')
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+logger.setLevel(logging.DEBUG)
+
+stats_queue = Queue()
+chunks_queue = Queue()
 
 
 def read_file(filename, chunk_size=1000000):
@@ -22,7 +29,7 @@ def read_file(filename, chunk_size=1000000):
     with open(filename) as file:
         while chunk := file.readlines(chunk_size):
             chunks_queue.put(chunk)
-    print('Sending STOP messages')
+    logger.info('Sending STOP messages')
     for i in range(CHUNKING_PROCESSES):
         chunks_queue.put('STOP_CHUNKS')
     pool.close()
@@ -30,22 +37,19 @@ def read_file(filename, chunk_size=1000000):
 
 
 def handle_chunk():
+    handler = ChunkHandler()
+    logger.info(f'Started chunk process {handler=}')
     stats_queue.put('START_CHUNK_PROC')
     while (chunk := chunks_queue.get()) != 'STOP_CHUNKS':
-        stats = StatisticsManager()
-        for line in chunk:
-            line_stats = handle_line(line)
-            stats.add_data(
-                *line_stats
-            )
-        stats_queue.put(stats.to_dict())
-        # print('stats in queue')
+        stats = handler.get_chunk_stats(chunk)
+        stats_queue.put(stats)
     stats_queue.put('END_CHUNK_PROC')
+    logger.info('Stopped chunk process')
 
 
 def prepare_statistics():
     stats = StatisticsManager()
-    print('Starting stats')
+    logger.info('Started statistics process')
     x = 1
     stats_queue.get()
     while x:
@@ -59,68 +63,20 @@ def prepare_statistics():
             for host, host_dict in partial_stats['by_host'].items():
                 stats.add_data(host, host_dict)
     stats.write_to_file('stats.csv')
-    print('Stats saved')
-
-
-def handle_line(line):
-    log_data = parse_line(line)
-    stats = {
-        'lines': 1,
-        'messages_length': len(log_data.get('msg')),
-        'severe_messages': 1 if get_severity(log_data.get('pri')) <= 1 else 0,
-        'oldest_timestamp': log_data.get('timestamp'),
-        'latest_timestamp': log_data.get('timestamp'),
-    }
-    return log_data.get('hostname'), stats
-
-
-def get_severity(pri):
-    """
-    From  https://www.ietf.org/rfc/rfc3164.txt
-
-        Numerical         Severity
-          Code
-           0       Emergency: system is unusable
-           1       Alert: action must be taken immediately
-           2       Critical: critical conditions
-           3       Error: error conditions
-           4       Warning: warning conditions
-           5       Notice: normal but significant condition
-           6       Informational: informational messages
-           7       Debug: debug-level messages
-    :param pri:
-    :return: severity_code
-    """
-    return pri % 8
-
-
-def parse_line(line):
-    match = RFC3164_PATTERN.match(line)
-    if not match:
-        logging.error(f'No match for syslog line: {line}')
-        return {}
-    return {
-        'pri': int(match.group(1)),
-        'timestamp': match.group(2),
-        'hostname': match.group(3),
-        'msg': match.group(4),
-    }
+    logger.info(f'Statistics saved: {stats.to_dict()}')
+    print(f'Statistics saved to file stats.csv')
 
 
 if __name__ == '__main__':
     start = time.perf_counter()
 
-    file_name = 'tmp'
+    file_name = sys.argv[1]
     file_size = os.path.getsize(file_name)
-    cs = 1048000
-    chunks_number = round(file_size / cs)
+    cs = 1048576
 
-    stats_queue = Queue(chunks_number + 20)
-    chunks_queue = Queue(chunks_number + 20)
-
-    print('Starting... ')
+    logger.info(f'Starting process {file_name=}, {file_size=}, {cs=}')
     read_file(file_name, cs)
 
     finish = time.perf_counter()
-
+    logger.info(f'Done in {finish - start} sec')
     print(f'Done in {finish - start}')
